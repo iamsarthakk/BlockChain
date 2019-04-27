@@ -1,0 +1,243 @@
+Proof of Work
+=============
+
+HW1 Problem 5: Fed may legitimately issue coin directly to attacker
+
+Recall block header (bytes, field, desc):
+  4   version      Block version information
+  32  prev_block   Hash of previous block
+  32  merkle_root  Transactions in this block
+  4   timestamp    When block created
+  4   bits         Hash target = (bits&0xffffff) << 8*(bits>>24 - 3)
+  4   nonce        Nonce used to generate this block
+
+Where merkle_root specifies a set of transactions, each like this:
+  4   version      Transaction version number (1)
+  *   tx_in        Transaction inputs
+      		   Each input has:  TxID, out_index, ScriptSig, sequence
+  *   tx_out       Transaction outputs
+      		   Each output has:  value, ScriptPK
+  4   lock_time    If <5e8 min block hight, if >= 5e8 min unix time
+
+To validate, execute ScriptPK || ScriptSig, and script must
+  execute to end w/o failing and leave non-zero value on top of stack
+
+Last time we saw pay to public key hash (P2PKH)
+    ScriptPK:  OP_DUP OP_HASH160 <PubkeyHash> OP_EQUALVERIFY OP_CHECKSIG
+    ScriptSig: <Sig> <PubKey>
+  Why not simpler P2PK ScriptPK?  <PubKey> OP_CHECKSIG
+    Hashes are shorter than pubkeys, more convenient
+    Attacker can't ECDSA pubkey from hash; limited post-quantum security
+
+Say my key is PK_david.  How do you send me one Bitcoin?
+  Construct P2PKH with HASH160(PK_david) in your transaction output
+  More convenient to use a bitcoin *address*, which is just hash value
+    Encode 20-byte hash w. type+checksum in base58, often shown as QRcode
+
+Another script: Multisig (e.g., 2 of 3 signers)
+    ScriptPK: OP_2 <PK1> <PK2> <PK3> OP_3 OP_CHECKMULTISIG
+    ScriptSig: OP_0 <Sig1> <Sig2>   [OP_0 because bug pops extra value]
+  Why would you use this?
+    - For big wallets, maybe harder to compromise two people/keys
+    - For escrow transactions (Dan to talk about in later lecture)
+
+How do you send a Bitcoin to someone using multisig?
+  Construct ScriptPK in transaction output?  New bigger multisig address?
+  Want: those sending money don't know/care if you use multisig
+
+New type of address P2SH (starts with 3 instead of 1):
+    ScriptPK:  OP_HASH160 <scriptHash> OP_EQUAL
+    ScriptSig: <Sig> [<Sig>...] <redeemscript>
+  What does this do according to the rules discussed so far?
+    Just checks H(redeemscript) == sciptHash -- not very secure
+  Special hard-coded rule for that specific format of ScriptPK
+    Execute redeemscript with its initial stack if OP_EQUAL returns 1
+  So can now make multisig address from hash of multisig script
+
+Warning: Don't get fancy with scripts on mainnet
+  Most miners only accept standard scripts, including for P2SH
+  So might send to P2SH address then be unable to redeem
+
+How do I give Dan access to my coins in 1 year in case I lose my key?
+  Seq 0xffffffff disables locktime
+  Make signed transaction with locktime in one year (don't need fancy script)
+
+Note sequence on input signals whether locktime valid
+  Also signals desire for "replace-by-fee" if seq < 0xfffffffe
+    Lets you replace one transaction with another that has higher fee
+      E.g., maybe you are in a hurry and want to up your fee
+      Must also pay higher relay fee to avoid DoS
+  Note can also replace by fee if unconfirmed parent opted in
+  When would you *not* want to replace by fee?
+    E.g., using 0 conf tx to buy coffee, to trust miner instead of buyer
+
+How do nodes publish transactions and blocks?
+  Nodes relay data along P2P network
+    Contact a seed node, ask for list of other nodes
+    Contact random nodes, ask them for list of other nodes, etc.
+  What prevents spam from DoSing the P2P network?
+    Nodes require transactions to be valid
+      All inputs unspent, script ok, sum of outputs < sum of inputs
+    Nodes will only forward valid transactions they haven't seen before
+    Also require transactions to have minimum relay fee (0.0001 BTC/KiB)
+      But this setting is a per-node setting
+
+Review consensus:  nodes get input (e.g., bit), produce write-once output
+  Want properties: validity, agreement, termination, fault tolerance
+Review Nakamoto consensus:
+  Given input x, search for y such that H(x,y) < 2^N/D
+    If you find an (x,y), broadcast it, output x, and terminate
+    Else if receive valid (x',y') first, then output x' and terminate
+
+How does this work in Bitcoin?
+  (x,y) is really the block header (y =~ nonce embedded within header)
+  So assemble header, search for nonce--but nonce only 4 bytes
+  If you exhaust 2^{32} nonces?
+    Fiddle with block to change merkle_root
+    Why not make nonce bigger?  Convenient to have small, 80-byte header
+What incentivizes minders to search for nonces?  Rewards
+  First transaction in block is "Coinbase" transaction, has special properties
+    Input does not need to be valid (contents ignored)
+      Can fiddle with input to change merkle_root, or signal message
+    Create new Bitcoin from thin air
+      50/block at genesis, halves every 210k blocks, currently 12.5/block
+    Also get all mining fees
+
+Let's look at some blockheaders and coinbase transactions
+  [Explore block on blockchain.info]
+  Can you figure out who mined the block?  [decode input as ASCII]
+  Is there a garbage (OP_RETURN) output?  Why?  [more nonce space]
+  How hard is it to find block?  notice 19 leading 0s (76 bits!)
+  [Look at Data > Stats] 50 * 10^{19} = 50 ExaHashes/second!
+
+Look at block 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+  What is difficulty of previous block?
+    Trick question, 0000000...000 is not a valid block hash
+    This is Bitcoin's *genesis block* - first block in the chain
+  Look at coinbase transaction - What's "Chancellor on brink..."?
+    Newspaper headline: proves mining didn't start before 1/3/2009
+    (Also possible political commentary?)
+
+Multiple approaches to mining balance capital / operational expenses
+  CPU mining uses existing computers, so low capex, but very slow
+  GPU is faster because of greater parallelism
+  FPGAs can strip out unneeded GPU features and be faster
+  ASICs take long manufacturing time, but way faster and more efficient
+    Today, Bitcoin mining all uses custom-built ASICs
+
+How to get less bursty income as miner - Join mining pool
+  How do you prove you are mining and not just freeloading?
+    Mine on block where coinbase goes to pool manager
+    Reveal block when H(header) < pool_target, where pool_target >> target
+      These less good but still hard hashes prove you are doing work
+  How do you get paid?
+    Pay per share - flat fee for each header < pool_target
+      Means pool operator takes some risk if no header < target
+    Proportional - get proportion of each block reward--what's wrong?
+      Pool hopping - switch pools if denominator is getting too big
+      Maybe fix by making proportional over longer history? open problem
+
+Should you mine Bitcoin?
+	For an operation to be profitable after 2-years
+	ex-depreciation, the price of BTC must increase 2%/month to
+	$11,296, assuming difficulty increases 8% per month. 8% is a
+	conservative assumption as difficulty has increased low to mid
+	double digit percentage over the last year despite price
+	depreciation. Including depreciation, the operation will be
+	profitable if BTC increases 5%/month to $21,660 in 2 years,
+	assuming difficulty increases 8%/month. If we take into
+	account the time value of money with a 20% discount rate due
+	to the riskier nature of mining, BTC prices must increase
+	6%/month to $26,412 in 2 years, also assuming difficulty
+	increases of 8% a month.  - Cumberland mining
+
+Is Nakamoto consensus an asynchronous or synchronous consensus protocol?
+    Synchronous - arbitrary delays = honest nodes mine arbitrarily long forks
+    Also note weird interplay of delay and safety:
+      Normal protocols:  Just wait for maximum delay to hear from all good guys
+      Nakamoto consensus:  Waiting gives adversary time to try more hashes
+
+What are the properties we want from Blockchain (from Dan's first lecture)?
+  "Persistence" - The blockchain is append-only
+    T-consistency: honest players agree on all but last T blocks of chain
+    Self-consistency: a single player's at two times differs only in T blocks
+  "Liveness" - Anyone can publish a transaction
+    g-chain-growth: After T time, chain grows by T/g blocks
+    mu-chain-quality: After T time mu fraction of blocks from honest players
+  Want these things to happen with overwhelming probability as T grows
+
+Suppose chain propagation Delta << block-interval
+  Will get a *convergence opportunity* if:
+    1) Delta time with no new blocks mined (so everyone at same length)
+    2) One block mined
+    3) Delta time with no new blocks mined
+  Say Delta = 10s (~ 1 MiB block over 1 Mbps link), avg. block time 10min
+    Turns out system survives attacker with 49.57% hashing power
+    So Nakamoto picked a good block time target
+    At 1 minute propagation, survive 47.2% attack
+  [See https://eprint.iacr.org/2016/454]
+
+How does bitcoin set difficulty?  recalibrate every 2016 blocks
+  Base difficulty on time to hash last *2015* blocks
+    Off by 1 error (2 weeks = 2016*10min) so mining too hard by 0.0496%
+    https://www.reddit.com/r/btc/comments/7etyqa/satoshis_bitcoin_difficulty_adjustment_bug/
+Does this affect "longest chain" rule?
+  Yes! mine long chain with trivial difficulty, then get hard at end
+  Can produce longer chain than Bitcoin because longest chain != most work
+So take valid chain with most work = sum of difficulty
+     difficulty = difficulty_1_target / target
+     difficulty_1 = (2^{224} - 2^{208}) = target_1 for bits 0x1d00ffff
+  Also, difficulty adjusts upwards at most 4x at a time, affects "valid"
+Note difficulty affects mining profitability, can induce oscillation
+  When BCH forked off from BTC, some miners oscillated between the two
+    For two weeks, BTC more profitable for mining, then BCH
+
+How do you update the Bitcoin network consensus layer?
+  Hard fork - agree to make incompatible change at particular block number
+    Incompatibility between blocks mined by upgraded & non-upgraded nodes
+    Neither group (upgraded & not) will mine on the other's blocks
+  Soft fork - one way incompatibility
+    Upgraded nodes will not mine on non-upgraded blocks
+    But non-upgraded nodes *will* mine on upgraded blocks
+      (Just might interpret them differently)
+  Why not add new OP_EVAL instead of P2SH?
+    Would create hard fork instead of soft--more problematic
+    Most bitcoin updates have been soft forks
+
+How to signal soft forks?  Try to agree at consensus layer
+  Temporarily dedicated bits of version to "vote" for soft forks
+  When 95% of blocks agree, lock in future upgrade block (bip-0009)
+  Worked okay until SegWit--but gives effective veto power over upgrades
+
+Bitcoin has had accidental hard forks--March 2013
+  One transaction touched 5,000 transactions, required 10,000 locks
+  Over limit for bitcoind 0.7, which rejected block as unparsable
+  Bitcoind 0.8 had newer database, so accepted no problem
+  0.8 had more hashing power, so miners left 0.8 and went back to 0.7
+    Eventually abandoned blocks that had been mined by 0.8
+August 2010 Integer overflow--created huge number of bitcoins
+  Took many hours for "good" blockchain to overtake length of "bad" one
+In each case "human-level" consensus saved the day
+  So possibly good that we have tractable number of mining pools
+    Managers can all discuss on irc
+  But few mining pools also means less decentralization
+  Could a blockchain technically prohibit mining pools?
+    Yes: require Hash(Sign(coinbase-recipient, header)) < max/D
+    So reward coins go to miner, not pool manager
+References:
+  https://freedom-to-tinker.com/2015/07/28/analyzing-the-2013-bitcoin-fork-centralized-decision-making-saved-the-day/
+  https://bitcoinmagazine.com/articles/bitcoin-network-shaken-by-blockchain-fork-1363144448/
+  https://en.bitcoin.it/wiki/Value_overflow_incident
+
+Orphan blocks represent wasted work
+  Uncle blocks - orphans as part of history [Ethereum]
+    Represent work invested in history, so give small reward to uncle miner
+  DAGs - don't require blocks to be in a chain
+    DAG provides partial order
+    Must define complete block order among non-ordered blocks
+      E.g., prioritize block from "well-connected" miners [DAG labs]
+
+Forking attack
+  Buy 51% mining hardware
+  Bribe miners
+  Run mining pool at a loss

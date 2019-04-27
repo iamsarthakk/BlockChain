@@ -1,0 +1,14 @@
+Ans1: If wallet checks tx.origin instead of msg.sender for authorization then it would gets the original
+      address that kicked of the transaction, which is still owner address. The attack wallet can instantly
+      drain all funds after making us send some ether to him.
+
+Ans2: ABI (Application Binary Interface) is the Interface between two program modules. It basically how we
+      call functions in a contract and get data back.
+      In Etherium it is needed to encode Solidity contract calls for EVM and to read data out of
+      transactions.
+
+Ans4: assert(false) compiles to 0xfe, which is an invalid opcode, using up all remaining gas, and reverting all changes while 
+      require(false) compiles to 0xfd which is the REVERT opcode, meaning it will refund the remaining gas.
+
+Ans5: A checksummed address serves as a bit of a guarantee. If the software supports testing the checksum, 
+      it can tell you if you entered an invalid address (AKA., the checksum didn't match the address)

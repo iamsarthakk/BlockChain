@@ -1,0 +1,183 @@
+Consensus
+=========
+
+Let's design a new currency system and answer 3 questions:
+    1. Who creates/issues this currency and what limits supply?
+    2. Can someone censor your ability to spend currency you own?
+    3. How do you know you've really been paid?
+  Review: how does traditional money (cash) solve these problems?
+    1. Only fed (bureau of engraving&printing) has equipment to make bank notes
+    2. No one can stop you from handing someone a bank note
+    3. Bank notes have visually verifiable anti-counterfeiting features
+
+Recall digital signatures can authenticate messages
+  Only holder of secret key SK can create a signature for a message m
+  Anyone with corresponding public key PK can check m was signed by SK
+  Idea: use signatures as anti-counterfeiting feature of digital money
+
+Straw man #1:  Fed uses digital signatures to create digital money
+  Want to pay someone?  Have fed sign message saying they got paid
+  But now fed is gatekeeper to all payments, not just printing money
+  Basically have PayPal--prone to censorship (or rent seeking)
+
+Straw man #2:  Fed issues coins to user pub keys, users sign coins to others
+  E.g., coin1 = { Create $1 (serial#78) for PK_fed }_{SK_fed}
+        coin2 = { Pay H(coin1) to PK_david }_{SK_fed}
+        coin3 = { Pay H(coin2) to PK_dan }_{SK_david}
+    1. Only fed can create new money
+    2. Once created, fed can't prevent money from being spent
+    3. Check signature chain is rooted at fed
+  Is this like cash?  What's wrong here?
+    A spent banknote is gone, but bits can be copied and *double spent*
+
+Straw man #3:  Like #2, but a coin is only valid the first time it is spent
+  To spend coins, publish all new coins in classified ad in NY Times
+    500,000+ circulation, archived at libraries -> hard to change history
+  How do you check that you really got paid?
+    Check every paper since previous coin was created?  impractical
+    Maybe lots of people compile and serve classified ad archives
+      But how to trust archived content?  (anything from last lecture useful?)
+  Idea: each classified ad should be: new coins, SHA256(yesterday's ad)
+    Call this a "block"
+    Ignore (exclude from archives + history) blocks with bad/duplicate coins
+           or with bad hash of yesterday's block
+    Multiple ads?  Take first block in classified section of newspaper
+    Given today's paper, you can now verify the entire archive
+  This is approximately how the world's first blockchain Surety worked (1995)
+    Aimed at document timestamping services, not currency
+    But published hashes weekly in the NY Times [show classified ad]
+      Eventually, scheme built up Merkle tree to make lookup efficient
+  Can we use Surety for payments?  How are we doing on our 3 questions?
+    1. Fed can still create supply-limited coins
+    2. Who submits the classified ad???  Surety can censor spending
+    3. Double-spends ignored and excluded from archive
+
+Attempt #4:  decentralized block creation
+  Use a peer-to-peer network to broadcast new coins to anyone who cares
+  Every day, "those who care" form *consensus* on set of submitted coins
+  All submit identical ad to NY Times, which only needs to print it once
+  Now how are we doing?
+    1. Fed can still create supply-limited coins
+    2. No single entity responsible for submitting to NY Times
+       What about NY Times?  Let's ditch the newspaper...
+       Everyone agrees on ad contents, so already hard to change history
+    3. Double-spends ignored and excluded from archive
+
+Except now we need to solve the consensus problem... what's this?
+  Classic problem across a set of nodes in distributed systems
+  Each node has an input, sends messages, produces an output.  Want:
+    Safety:   Agreement - all nodes output the same value
+          :   Validity - output was input to one of the nodes
+    Liveness: Termination - eventually all non-faulty nodes output a value
+    Fault-tolerance - can survive failure of a node at any point
+
+1980: Byzantine Generals problem (Lamport, Shostak, Pease)
+  N generals:  1 commander, N-1 lieutenants; M are traitors (faulty)
+    Non-faulty generals communicate reliably in rounds via messenger
+    All non-faulty generals must take same action (attack, retreat) or disaster
+  Class textbook says consensus impossible if M >= N/3.  Why?
+    [Show page 385 of http://lamport.azurewebsites.net/pubs/byz.pdf]
+  But this isn't true using a tool from last lecture!  What can fix this?
+    Digitally sign messages:  So lieutenants can *prove* commander faulty
+  With signatures, can survive up to M = N-2 traitors for any N.  But...
+    Need M+1 rounds of communication to survive M traitors
+    Any delay of messenger automatically means sender is faulty
+    Network outage is catastrophic--get termination but not agreement
+  Solution assumes a *synchronous* model
+    If you don't hear from node by deadline, you can assume it's faulty
+
+Ideally we want solution for an *asynchronous* model
+  No assumptions about message delay, relative clock speed of nodes
+    Means can't differentiate a slow node from a failed one
+  Smart people in systems community had many "solutions" in early 1980s
+    Problem: they all eventually turned out to be broken!
+
+1982: FLP impossibility result (Fischer, Lynch, Paterson)
+  Want deterministic algorithm with safety, liveness, *and* fault-tolerance?
+    Sorry, pick at most two for an asynchronous consensus protocol
+    Even if deciding just one bit, and just one node fails by just crashing
+  Proof idea:
+    There are "bivalent" states, where message delivery order affects output
+      Flip inputs from all 0s to all 1s, one at a time, until output 1 possible
+      Node with last input could fail, so either output possible
+    To terminate, must reach "univalent" state with only 1 possible output
+    Some last message must switch system from bivalent to univalent state
+      Call this a deciding message
+    But whoever sent a deciding message might fail
+      Can't depend on receiving it for termination, need ability to move on
+      Requires other messages to "neutralize" message so no longer deciding
+    Pathological network can always delay deciding messages until neutralized
+
+1983: Ben Or - Just randomize the protocol
+  FLP proof requires determinism--bad network must delay the right messages
+  New protocol:
+    - Everyone broadcast input bits
+    - Wait to hear from N-M peers
+    - If majority of honest nodes (>(N+M)/2 nodes) had same input b, broadcast b
+      Else, broadcast the fact that no value garnered majority
+    - Wait to hear from N-M peers
+    - If majority of honest nodes think majority voted for b, output b
+      Else, if 1 honest node (M+1 nodes) saw majority b, restart with input b
+      Else, *flip a coin* and restart with random input bit
+  If M < N/5, this protocol has safety and terminates with probability 1
+    But exponential expected number of rounds--all coin flips must align
+
+1983: Rabin - Just flip one coin for everyone ("common"/"public" coin)
+  Ben Or keeps going until everyone flips coin same way (slow)
+  Really just need some random bit a bad network can't predict
+  Example: derive bit from deterministic threshold signature on round number
+    Problem: cryptographically complex, often need trusted dealer
+
+1984: Partial synchrony (Dwork, Lynch, Stockmeyerr)
+  Ben Or & public coins seldom used in real systems
+  What we really want: always safe protocols that terminate *in practice*
+  FLP doesn't rule out termination under very weak synchrony assumptions
+   E.g., bounded message delay and clock drift, but don't know the bounds
+         or system becomes synchronous after some initial delay
+
+1988: Viewstamped Replication (Oki, Liskov) first "modern" consensus
+    - Use a leader to propose a value for each entry in a log
+    - Vote on values proposed by leader so majority sees each value
+    - If leader fails, vote on new leader and where previous log ended
+  Safe up to M < N/2 crash failures, not malicious nodes
+  Terminates with partial synchrony and timeouts
+
+1990: Paxos (Lamport) has similar properties to VR
+  Paper is unreadable (failed humor and weird problem decomposition)
+  Most people don't understand paper and just assume Paxos = VR
+
+1999: Practical Byzantine Fault Tolerance (PBFT) (Castro, Liskov)
+  Extends VR to deal with malicious ("Byzantine") nodes
+  Coordinated by leader
+    But round-robin through leaders when nodes suspect leader faulty
+  Survives up to M < N/3 malicious nodes
+
+Unfortunately, previous solutions require non-faulty (super-)majority
+  In currency example, begs the question: who picks the N nodes?
+  Anyone with the power to appoint N nodes could effect censorship
+  What about allowing anyone to join, letting N grow arbitrarily?
+    Problem: Attacker gains majority by creating virtual nodes "Sybil attack"
+    Majority attacker can mount not just censorship but double-spend attacks!
+
+We haven't yet talked about who creates the currency...
+  Suppose we want to decentralize that as well
+
+2008: Nakamoto consensus
+  Output consensus value x if you find y solving puzzle H(x,y) < 2^n/D
+  It's hard work finding y, so let's sweeten the deal:
+    The first coin in x creates new currency out of thin air
+    So pick x such that the first coin will belong to you
+    Now try to find y for your x before someone else does for a different x'
+  Nakamoto compares to expending resources to increase the supply of gold
+  But what if you see two valid pairs (x,y) and (x',y')?
+    Recall x also contains hash of the previous block
+    As the hash chain gets longer, represents more and more cumulative work
+    So take whichever of x and x' corresponds to a longer ("taller") history
+    (If both same height, wait for people to build on one block or the other,
+     then take tallest block, which will include at most one of x or x'.)
+  How about our 3 questions?
+    1. Money created in decentralized way by miners
+    2. Censorship requires collusion among the vast majority of hash power
+       (or some sort of non-technical, extrinsic incentives)
+    3. The deeper your payment, the more work it would be to change history
+       (but still nowhere near as hard as forging digital signatures)

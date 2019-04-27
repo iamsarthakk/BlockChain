@@ -1,0 +1,21 @@
+TASK 1:
+In this after reading the slides I got to know that I have to check three conditions.
+The conditions involves to find hash of various variable and to find how to compute the hashes
+I consulted from cryptotest.cpp and txn_t::txn_t() function in transaction.cpp.
+To check digital signature I consulted slide number 30 to find how to validate
+digital signature using verify() function of pub_key.
+After running the test cases with helper.o I was able to pass all the test cases.
+Thus I was able to implement first part of the assignment
+
+TASK 2:
+I did exacly as directed in the slides provided in the assignment and removed the previously written function.
+Then I follow the instructions given in slides line by line which were easy to follow after completing first
+part of assignment.
+On running test1.sh I passed all three test cases
+On running test2.sh I passed the test all three test cases for t4 and t5 but for t6 I was not able to verify it
+because it was taking too much time on my system.
+Thus I was able to implement second part of assignment.
+
+Name: Sarthak Kumar
+Roll No.: 160627
+"I did not violate any honor code to do this assignment. All the code is written by me only"
